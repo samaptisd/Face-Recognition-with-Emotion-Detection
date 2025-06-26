@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Face Recognition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* Reset & full screen styling */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      font-family: 'Arial', sans-serif;
+      background: #f4f4f9;
+      overflow: hidden;
+    }
+    .full-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    /* Layout using flexbox */
+    .main-container {
+      display: flex;
+      height: 100%;
+      width: 100%;
+    }
+    /* Left panel: video and result */
+    .video-container {
+      flex: 3;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 8px;
+      box-shadow: 0 0 0 5px green;
+    }
+    #result {
+      margin-top: 10px;
+      font-size: 1.2em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+    }
+    #statusIcon {
+      font-size: 1.5em;
+      margin-right: 8px;
+    }
+    /* Right panel: announced names */
+    .names-panel {
+      flex: 1;
+      background: #fff;
+      padding: 20px;
+      overflow-y: auto;
+      border-left: 2px solid #e0e0e0;
+      box-shadow: 0 0 0 5px blue;
+      background-color: #b8e3b8;
+    }
+    .names-panel h2 {
+      margin-bottom: 15px;
+      color: #333;
+    }
+    #namesList {
+      list-style-type: none;
+    }
+    #namesList li {
+      padding: 8px 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 1em;
+      color: #000;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body class="full-screen">
+  <div class="main-container">
+    <div class="video-container">
+      <video id="video" autoplay></video>
+      <!-- Hidden canvas for frame capture -->
+      <canvas id="canvas" style="display:none;"></canvas>
+      <div id="result">
+        <span id="statusIcon"></span>
+        <span id="resultText">Result: None</span>
+      </div>
+    </div>
+    <div class="names-panel">
+      <h2>Aludecor ABM 2025</h2>
+      <ul id="namesList"></ul>
+    </div>
+  </div>
+  
+  <script>
+    // ==============================
+    // Preload & Cache SpeechSynthesis Voices
+    // ==============================
+    let cachedVoices = [];
+    function loadVoices() {
+      cachedVoices = window.speechSynthesis.getVoices();
+      if (cachedVoices.length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          cachedVoices = window.speechSynthesis.getVoices();
+          console.log("Voices loaded:", cachedVoices);
+        };
+      } else {
+        console.log("Voices preloaded:", cachedVoices);
+      }
+    }
+    loadVoices();
+    
+    function speakMessage(message) {
+      const utterance = new SpeechSynthesisUtterance(message);
+      // Set language hint to Indian accent.
+      utterance.lang = 'hi-IN';
+      if (cachedVoices.length > 0) {
+        const indianVoice = cachedVoices.find(voice =>
+          voice.lang === 'hi-IN' || voice.name.toLowerCase().includes('hindi')
+        );
+        utterance.voice = indianVoice ? indianVoice : cachedVoices[0];
+      }
+      window.speechSynthesis.speak(utterance);
+    }
+    
+    // ==============================
+    // DOM Elements & Parameters
+    // ==============================
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const resultText = document.getElementById('resultText');
+    const statusIcon = document.getElementById('statusIcon');
+    const namesListUl = document.getElementById('namesList');
+    const ctx = canvas.getContext('2d');
+    
+    // Parameters for motion detection and capture.
+    const motionThreshold = 15000; // Adjust as needed.
+    const captureInterval = 2000;  // Capture frame every 2000ms.
+    
+    // Variables to hold the previous frame.
+    let prevImageData = null;
+    
+    // Store announced names (newest at the beginning)
+    let announcedNames = [];
+    
+    // Update the announced names list (latest names at the top)
+    function updateNamesList() {
+      namesListUl.innerHTML = "";
+      announcedNames.forEach(name => {
+        const li = document.createElement('li');
+        li.textContent = "✅ " + name;
+        namesListUl.appendChild(li);
+      });
+    }
+    
+    // ==============================
+    // Access the user's camera.
+    // ==============================
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => { console.error("Error accessing camera: ", err); });
+    
+    // ==============================
+    // Simple Motion Detection
+    // ==============================
+    function detectMotion(currentData, previousData) {
+      if (!previousData) return true;
+      let diff = 0;
+      for (let i = 0; i < currentData.data.length; i += 4) {
+        diff += Math.abs(currentData.data[i] - previousData.data[i]) +
+                Math.abs(currentData.data[i+1] - previousData.data[i+1]) +
+                Math.abs(currentData.data[i+2] - previousData.data[i+2]);
+      }
+      return diff > motionThreshold;
+    }
+    
+    // ==============================
+    // Capture Frame, Send to Server, Process Results
+    // ==============================
+    function captureAndRecognize() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const motionDetected = detectMotion(currentImageData, prevImageData);
+      prevImageData = currentImageData;
+      if (motionDetected) {
+        const dataURL = canvas.toDataURL('image/png');
+        fetch('/recognize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: dataURL })
+        })
+        .then(response => response.json())
+        .then(data => {
+          // Expect an array of recognized names.
+          const recognizedArray = data.recognized || [];
+          if (recognizedArray.length === 0) {
+            resultText.textContent = "Not recognized";
+            statusIcon.textContent = "✖";
+            statusIcon.style.color = "red";
+            video.style.boxShadow = "0 0 0 5px red";
+            // console.log('Not Recognized');
+          } else {
+            resultText.textContent = recognizedArray.join(", ");
+            // console.log(recognizedArray.join(", "));
+            statusIcon.textContent = "✔";
+            statusIcon.style.color = "green";
+            video.style.boxShadow = "0 0 0 5px green";
+            
+            // Filter new names (ones not already announced)
+            const newNames = recognizedArray.filter(name => !announcedNames.includes(name));
+            if (newNames.length > 0) {
+              // Prepend new names so that the latest appear at the top.
+              announcedNames = newNames.concat(announcedNames);
+              updateNamesList();
+              // Build announcement message.
+              let message = "";
+              if (newNames.length === 1) {
+                message = "Now entering: " + newNames[0] + ". Welcome to the 2025 Aludecor ABM Meeting.";
+              } else if (newNames.length === 2) {
+                message = "Now entering together: " + newNames.join(" and ") + ". Welcome to the 2025 Aludecor ABM Meeting.";
+              } else {
+                message = "Now entering together: " + newNames.slice(0, -1).join(", ") +
+                          " and " + newNames[newNames.length - 1] +
+                          ". Welcome to the 2025 Aludecor ABM Meeting.";
+              }
+              speakMessage(message);
+            }
+          }
+        })
+        .catch(err => { console.error("Error in recognition:", err); });
+      }
+    }
+    
+    // Adjust canvas dimensions to match the video when metadata is loaded.
+    video.addEventListener('loadedmetadata', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    });
+    
+    // Start capturing frames at regular intervals.
+    setInterval(captureAndRecognize, captureInterval);
+    
+  </script>
+  
+</body>
+</html>

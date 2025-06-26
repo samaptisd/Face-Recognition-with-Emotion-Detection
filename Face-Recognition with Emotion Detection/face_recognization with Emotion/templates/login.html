@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Login - Face Recognition</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Cambria, Cochin, Georgia, Times, "Times New Roman", serif;
+    }
+
+    html, body {
+      height: 100%;
+      width: 100%;
+    }
+
+    body {
+      background: url(https://gifdb.com/images/high/ai-face-recognition-technology-u2ubkyonbffj9w3a.gif);
+      background-position: center;
+      background-size: cover;
+      background-repeat: no-repeat;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 100px;
+      position: relative;
+    }
+
+    .login-container {
+      background: #e9eaeb4a;
+      padding: 30px;
+      border: 3px solid #bebfc1;
+      border-radius: 15px;
+      backdrop-filter: blur(5px);
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+      animation: fadeIn 1s ease-in-out;
+    }
+
+    .login-container h2 {
+      margin-bottom: 25px;
+      color: #edecf1;
+      font-size: 26px;
+    }
+
+    .input-group {
+      margin-bottom: 25px;
+      position: relative;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      transition: border-color 0.3s, box-shadow 0.3s;
+    }
+
+    .input-group input:focus {
+      border-color: #5563de;
+      outline: none;
+      box-shadow: 0 0 5px rgba(85, 99, 222, 0.5);
+    }
+
+    .input-group label {
+      position: absolute;
+      top: 50%;
+      left: 12px;
+      transform: translateY(-50%);
+      background: transparent;
+      padding: 0 5px;
+      color: #777;
+      pointer-events: none;
+      transition: top 0.3s, font-size 0.3s, color 0.3s;
+    }
+
+    .input-group input:focus + label,
+    .input-group input:not(:placeholder-shown) + label {
+      top: -10px;
+      font-size: 14px;
+      color: #f6f6f8;
+    }
+
+    .login-btn {
+      background: #55a5de;
+      color: #fff;
+      padding: 10px;
+      border: none;
+      border-radius: 10px;
+      width: 100%;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background 0.3s, transform 0.3s;
+    }
+
+    .login-btn:hover {
+      background: #0f72ab;
+      transform: translateY(-2px);
+    }
+
+    .login-btn:active {
+      transform: translateY(0);
+    }
+
+    .title-container {
+      color: white;
+      text-align: right;
+      max-width: 80%;
+      animation: fadeIn 1.5s ease-in-out;
+    }
+
+    .title-container h1 {
+      font-size: 40px;
+      font-weight: bold;
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .forgot-password {
+      display: block;
+      margin-bottom: 15px;
+      color: #efeff0;
+      text-decoration: none;
+      font-size: 15px;
+      transition: color 0.3s;
+    }
+
+    .forgot-password:hover {
+      color: #d2d2d2;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-container">
+    <form action="{{ url_for('login') }}" method="POST">
+      <h2>Login</h2>
+      <div class="input-group">
+        <input type="text" name="username" placeholder="Username" required>
+      </div>
+      <div class="input-group">
+        <input type="password" name="password" placeholder="Password" required>
+      </div>
+      <button type="submit" class="login-btn">Login</button>
+    </form>
+  </div>
+
+  <div class="title-container">
+    <h1>Face Recognition System</h1>
+  </div>
+
+</body>
+</html>

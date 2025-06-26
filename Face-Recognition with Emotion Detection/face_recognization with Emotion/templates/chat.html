@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Chat with Personal Assistant</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    #chatResult { margin-top: 20px; font-size: 1.2em; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h2>Speak to Your Assistant</h2>
+  <div id="chatResult">Listening...</div>
+
+  <script>
+    const chatResultDiv = document.getElementById('chatResult');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      chatResultDiv.textContent = "Speech recognition not supported in this browser.";
+    } else {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = function(event) {
+        const transcript = event.results[event.results.length - 1][0].transcript.trim();
+        console.log("Heard:", transcript);
+        chatResultDiv.textContent = "You said: " + transcript;
+
+        fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: transcript })
+        })
+        .then(res => res.json())
+        .then(data => {
+          const reply = data.reply;
+          chatResultDiv.textContent = "Assistant: " + reply;
+          const utter = new SpeechSynthesisUtterance(reply);
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(utter);
+
+          // Actions
+          if (reply.includes("playing music")) {
+            window.open("https://www.youtube.com/results?search_query=top+uplifting+songs", '_blank');
+          }
+          if (reply.includes("meeting scheduled")) {
+            alert("✅ Event will be added to your calendar.");
+          }
+        })
+        .catch(err => {
+          console.error("Error in fetch:", err);
+        });
+      };
+
+      recognition.onerror = function(e) {
+        console.error("Speech recognition error:", e);
+      };
+
+      recognition.onend = () => recognition.start();
+      recognition.start();
+    }
+  </script>
+</body>
+</html>

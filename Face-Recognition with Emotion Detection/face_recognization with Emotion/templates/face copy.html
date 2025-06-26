@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Face Recognition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    /* Reset & full screen styling */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      font-family: 'Arial', sans-serif;
+      background: #f4f4f9;
+      overflow: hidden;
+    }
+    .full-screen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    /* Layout using flexbox */
+    .main-container {
+      display: flex;
+      height: 100%;
+      width: 100%;
+    }
+    /* Left panel: video and result */
+    .video-container {
+      flex: 3;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 8px;
+      box-shadow: 0 0 0 5px green;
+    }
+    #result {
+      margin-top: 10px;
+      font-size: 1.2em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+    }
+    #statusIcon {
+      font-size: 1.5em;
+      margin-right: 8px;
+    }
+    /* Right panel: announced names */
+    .names-panel {
+      flex: 1;
+      background: #fff;
+      padding: 20px;
+      overflow-y: auto;
+      border-left: 2px solid #e0e0e0;
+      box-shadow: 0 0 0 5px blue;
+      background-color: #b8e3b8;
+    }
+    .names-panel h2 {
+      margin-bottom: 15px;
+      color: #333;
+    }
+    #namesList {
+      list-style-type: none;
+    }
+    #namesList li {
+      padding: 8px 10px;
+      border-bottom: 1px solid #eee;
+      font-size: 1em;
+      color: #000;
+      font-weight: bold;
+    }
+  </style>
+
+  <!-- Single-tab enforcement script -->
+  <script>
+    (function() {
+      // Generate a unique ID for this tab
+      const tabId = Date.now() + "-" + Math.random().toString(36).substr(2);
+      // Check if an active tab is already registered
+      const activeTab = localStorage.getItem("activeTab");
+      if (activeTab && activeTab !== tabId) {
+        alert("Another tab is already active. Please use that tab.");
+        window.location.href = "/single_tab_error"; // Optionally, create a page that informs the user.
+      } else {
+        localStorage.setItem("activeTab", tabId);
+      }
+      window.addEventListener("unload", function() {
+        if (localStorage.getItem("activeTab") === tabId) {
+          localStorage.removeItem("activeTab");
+        }
+      });
+    })();
+  </script>
+</head>
+<body class="full-screen">
+  <div class="main-container">
+    <div class="video-container">
+      <video id="video" autoplay></video>
+      <!-- Hidden canvas for frame capture -->
+      <canvas id="canvas" style="display:none;"></canvas>
+      <div id="result">
+        <span id="statusIcon"></span>
+        <span id="resultText">Result: None</span>
+      </div>
+    </div>
+    <div class="names-panel">
+      <h2>Aludecor ABM 2025</h2>
+      <ul id="namesList"></ul>
+    </div>
+  </div>
+  
+  <script>
+    // ==============================
+    // Preload and Cache SpeechSynthesis Voices
+    // ==============================
+    let cachedVoices = [];
+    function loadVoices() {
+      cachedVoices = window.speechSynthesis.getVoices();
+      if (cachedVoices.length === 0) {
+        window.speechSynthesis.onvoiceschanged = () => {
+          cachedVoices = window.speechSynthesis.getVoices();
+          console.log("Voices loaded:", cachedVoices);
+        };
+      } else {
+        console.log("Voices preloaded:", cachedVoices);
+      }
+    }
+    loadVoices();
+    
+    function speakMessage(message) {
+      const utterance = new SpeechSynthesisUtterance(message);
+      // utterance.lang = 'hi-IN';
+      utterance.lang = 'en-IN';
+      if (cachedVoices.length > 0) {
+        const indianVoice = cachedVoices.find(voice =>
+          // voice.lang === 'hi-IN' || voice.name.toLowerCase().includes('hindi')
+          voice.lang === 'en-IN'
+        );
+        utterance.voice = indianVoice ? indianVoice : cachedVoices[0];
+      }
+      window.speechSynthesis.speak(utterance);
+    }
+    
+    // ==============================
+    // DOM Elements & Parameters
+    // ==============================
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const resultText = document.getElementById('resultText');
+    const statusIcon = document.getElementById('statusIcon');
+    const namesListUl = document.getElementById('namesList');
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    
+    const motionThreshold = 15000; // Adjust as needed.
+    const captureInterval = 2000;  // Capture frame every 2000ms.
+    let prevImageData = null;
+    
+    // Store announced names (newest at the beginning)
+    let announcedNames = [];
+    
+    function updateNamesList() {
+      namesListUl.innerHTML = "";
+      announcedNames.forEach(name => {
+        const li = document.createElement('li');
+        li.textContent = "✅ " + name;
+        namesListUl.appendChild(li);
+      });
+    }
+    
+    // ==============================
+    // Access the User's Camera
+    // ==============================
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => { console.error("Error accessing camera: ", err); });
+    
+    // ==============================
+    // Simple Motion Detection
+    // ==============================
+    function detectMotion(currentData, previousData) {
+      if (!previousData) return true;
+      let diff = 0;
+      for (let i = 0; i < currentData.data.length; i += 4) {
+        diff += Math.abs(currentData.data[i] - previousData.data[i]) +
+                Math.abs(currentData.data[i+1] - previousData.data[i+1]) +
+                Math.abs(currentData.data[i+2] - previousData.data[i+2]);
+      }
+      return diff > motionThreshold;
+    }
+    
+    // ==============================
+    // Capture Frame, Send to Server, Process Results
+    // ==============================
+    function captureAndRecognize() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const currentImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const motionDetected = detectMotion(currentImageData, prevImageData);
+      prevImageData = currentImageData;
+      if (motionDetected) {
+        const dataURL = canvas.toDataURL('image/png');
+        fetch('/recognize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: dataURL })
+        })
+        .then(response => response.json())
+        .then(data => {
+          const recognizedArray = data.recognized || [];
+          if (recognizedArray.length === 0) {
+            resultText.textContent = "Not recognized";
+            statusIcon.textContent = "✖";
+            statusIcon.style.color = "red";
+            video.style.boxShadow = "0 0 0 5px red";
+          } else {
+            resultText.textContent = recognizedArray.join(", ");
+            statusIcon.textContent = "✔";
+            statusIcon.style.color = "green";
+            video.style.boxShadow = "0 0 0 5px green";
+    
+            // Filter new names (ones not already announced)
+            const newNames = recognizedArray.filter(name => !announcedNames.includes(name));
+            if (newNames.length > 0) {
+              announcedNames = newNames.concat(announcedNames);
+              updateNamesList();
+            //   let message = "";
+            //   if (newNames.length === 1) {
+            //     message = "Now entering: " + newNames[0] + ". Welcome to the 2025 Aludecor ABM Meeting.";
+            //   } else if (newNames.length === 2) {
+            //     message = "Now entering together: " + newNames.join(" and ") + ". Welcome to the 2025 Aludecor ABM Meeting.";
+            //   } else {
+            //     message = "Now entering together: " + newNames.slice(0, -1).join(", ") +
+            //               " and " + newNames[newNames.length - 1] +
+            //               ". Welcome to the 2025 Aludecor ABM Meeting.";
+            //   }
+            //   speakMessage(message);
+            // }
+            // Announcement messages templates
+              const messages = [
+                "Namaste! Welcome to the Aludecor 3.0 Annual Business Meet! Let me take a quick look at you... Oh, there you are! [NAME]—your presence has been officially marked. Let the transformation begin!",
+                "Well, well, look who’s here—[NAME]! You’re looking sharp and ready for transformation. Your registration is confirmed. Welcome to the Aludecor 3.0 experience!",
+                "Ah, the future is here, and so are you, [NAME]! Registration complete. It’s an honor to welcome you to this transformative journey at ABM 2025!"
+              ];
+              
+              // Randomly select a template
+              let chosenMessage = messages[Math.floor(Math.random() * messages.length)];
+              // If more than one new name, join them with " and "
+              let nameString = newNames.length === 1 ? newNames[0] : newNames.join(" and ");
+              // Replace the placeholder with the actual name(s)
+              chosenMessage = chosenMessage.replace("[NAME]", nameString);
+              
+              // Announce the message
+              speakMessage(chosenMessage);
+            }
+          }
+        })
+        .catch(err => { console.error("Error in recognition:", err); });
+      }
+    }
+    
+    video.addEventListener('loadedmetadata', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    });
+    
+    setInterval(captureAndRecognize, captureInterval);
+    
+    // ==============================
+    // Session Check to Enforce Single Login
+    // ==============================
+    function checkSession() {
+        fetch('/session_status')
+            .then(response => {
+            if (!response.ok) {
+                // If response is not OK, consider the session expired.
+                throw new Error("Session check failed with status " + response.status);
+            }
+            return response.json();
+            })
+            .then(data => {
+            if (data.status === "invalid") {
+                alert("Your session has expired because you logged in from another device or tab.");
+                window.location.href = '/logout';
+            }
+            })
+            .catch(err => {
+            console.error("Session check error:", err);
+            // Optionally, redirect if error indicates that the session is no longer valid.
+            window.location.href = '/logout';
+            });
+        }
+
+    setInterval(checkSession, 10000); // Check every 10 seconds
+    
+  </script>
+</body>
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Face & Emotion Recognition</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; font-family: Arial, sans-serif; background: #f9f9f9; overflow: hidden; }
+    .main-container { display: flex; height: 100%; width: 100%; }
+
+    .emotion-panel {
+      flex: 1.2;
+      background: #ffffff;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      border-right: 3px solid #ccc;
+    }
+    .emotion-panel h2 {
+      margin-bottom: 10px;
+      color: #444;
+      text-align: center;
+    }
+    .emotion-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 6px 0;
+      font-size: 1.1em;
+      font-weight: bold;
+    }
+    .emotion-label {
+      flex: 1;
+      color: #333;
+    }
+    .emotion-percentage {
+      width: 60px;
+      text-align: right;
+      color: #111;
+    }
+
+    .video-container {
+      flex: 3;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 10px;
+    }
+    video {
+      max-width: 100%;
+      max-height: 100%;
+      border-radius: 8px;
+      box-shadow: 0 0 0 5px green;
+    }
+    #result {
+      margin-top: 10px;
+      font-size: 1.2em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+    }
+    #statusIcon {
+      font-size: 1.5em;
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="main-container">
+    <div class="emotion-panel">
+      <h2>Emotion Panel</h2>
+      <div class="emotion-bar"><span class="emotion-label">😡 Angry</span><span class="emotion-percentage" id="angryVal">0%</span></div>
+      <div class="emotion-bar"><span class="emotion-label">🤢 Disgust</span><span class="emotion-percentage" id="disgustVal">0%</span></div>
+      <div class="emotion-bar"><span class="emotion-label">😨 Fear</span><span class="emotion-percentage" id="fearVal">0%</span></div>
+      <div class="emotion-bar"><span class="emotion-label">😄 Happy</span><span class="emotion-percentage" id="happyVal">0%</span></div>
+      <div class="emotion-bar"><span class="emotion-label">😢 Sad</span><span class="emotion-percentage" id="sadVal">0%</span></div>
+      <div class="emotion-bar"><span class="emotion-label">😲 Surprise</span><span class="emotion-percentage" id="surpriseVal">0%</span></div>
+      <div class="emotion-bar"><span class="emotion-label">😐 Neutral</span><span class="emotion-percentage" id="neutralVal">0%</span></div>
+    </div>
+    <div class="video-container">
+      <video id="video" autoplay muted></video>
+      <canvas id="canvas" style="display:none;"></canvas>
+      <div id="result">
+        <span id="statusIcon"></span>
+        <span id="resultText">Result: None</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  
+    const statusIcon = document.getElementById("statusIcon");
+    const resultText = document.getElementById("resultText");
+  
+    let announcedSet = new Set(); // 👈 prevent repeat announcements
+  
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => { console.error("Camera error:", err); });
+  
+    const interval = 2500;
+  
+    function updateEmotionUI(data) {
+      const labels = ['angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral'];
+      labels.forEach((label, idx) => {
+        const val = Math.round((data[idx] || 0) * 100);
+        document.getElementById(`${label}Val`).innerText = `${val}%`;
+      });
+    }
+  
+    function speakMessage(message) {
+      const utter = new SpeechSynthesisUtterance(message);
+      utter.lang = 'en-IN';
+      window.speechSynthesis.speak(utter);
+    }
+  
+    function captureAndSend() {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const dataURL = canvas.toDataURL('image/png');
+      if (!dataURL || dataURL.length < 100) return;
+  
+      fetch('/recognize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: dataURL })
+      })
+      .then(res => res.json())
+      .then(data => {
+        const emotions = data.emotions || [0, 0, 0, 0, 0, 0, 0];
+        updateEmotionUI(emotions);
+  
+        const recognized = data.recognized || [];
+        const maxVal = Math.max(...emotions);
+        const hasValidEmotion = maxVal > 0.01;
+  
+        if (recognized.length === 0 && !hasValidEmotion) {
+          resultText.innerText = "Not recognized";
+          statusIcon.textContent = "✖";
+          statusIcon.style.color = "red";
+          return;
+        }
+  
+        if (recognized.length > 0) {
+          const topIdx = emotions.indexOf(maxVal);
+          const label = ['Angry','Disgust','Fear','Happy','Sad','Surprise','Neutral'][topIdx];
+          const nameOnly = recognized[0].split(" - ")[0];
+  
+          const suggestionMap = {
+            Happy: "Keep spreading the joy!",
+            Sad: "Take a short break or listen to your favorite uplifting song.",
+            Angry: "Try deep breathing or step away for a moment.",
+            Fear: "You're safe here, everything is okay.",
+            Disgust: "Maybe shift focus to something positive.",
+            Surprise: "Hope it's a good surprise!",
+            Neutral: "Stay mindful and focused!"
+          };
+  
+          const suggestion = suggestionMap[label] || "Keep going!";
+          resultText.innerText = `${nameOnly} - Emotion: ${label} | Suggestion: ${suggestion}`;
+          statusIcon.textContent = "✔";
+          statusIcon.style.color = "green";
+  
+          // ✅ Speak only once per name
+          if (!announcedSet.has(nameOnly)) {
+            speakMessage(`${nameOnly}, you seem ${label}. ${suggestion}`);
+            announcedSet.add(nameOnly);
+          }
+        }
+      })
+      .catch(err => console.error("❌ Fetch failed:", err));
+    }
+  
+    video.addEventListener('loadedmetadata', () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      setInterval(captureAndSend, interval);
+    });
+  
+    // Optional: clear announcements after 10 minutes
+    setInterval(() => { announcedSet.clear(); }, 10 * 60 * 1000);
+  </script>
+  
+</body>
+</html>
